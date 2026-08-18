@@ -1,0 +1,78 @@
+# The application. No database yet: the leaderboard lives in each pod's memory,
+# which is the point of the first half of block 4.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snake
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: snake
+  template:
+    metadata:
+      labels:
+        app: snake
+    spec:
+      # Everything Pod Security Standards "restricted" asks for. Block 5 turns
+      # that policy on: the attacker pod is refused and these keep running,
+      # which is the whole argument for hardening before you are forced to.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: snake
+          image: snake:v2
+          # The image was put on the node with `kind load docker-image`, so
+          # there is no registry to pull it from. Never means never try.
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 3000
+          env:
+            # The downward API: Kubernetes tells the container its own pod name.
+            # This is what makes the status panel able to say who answered.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          # Readiness decides whether this pod receives traffic at all.
+          # Liveness decides whether it gets restarted. They are different
+          # questions and they deserve different probes.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: snake
+spec:
+  type: NodePort
+  selector:
+    app: snake
+  ports:
+    - port: 80
+      targetPort: 3000
+      # Matches the extraPortMapping in kind/cluster.yaml, so this is
+      # reachable on localhost:8080 inside the Codespace.
+      nodePort: 30080

@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+npm-debug.log*
+.eslintcache
+
+# Participants create this in block 2. The reference copy is solutions/dockerignore.
+app/.dockerignore
+
+# Block 3 creates this on purpose, to show it leaking into an image layer.
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/

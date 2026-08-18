@@ -1,0 +1,48 @@
+# Builds the hardened image, scans it, and publishes it so that block 1 of the
+# course has something to `docker run` before anyone has written a Dockerfile.
+#
+# It is also the three minute demo in block 2: the same Trivy command the
+# participants ran by hand, running on every push, failing the build on a
+# critical finding. Nobody has to write this during the course, they just watch
+# it run.
+name: build and scan
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the hardened image
+        run: |
+          cp solutions/dockerignore app/.dockerignore
+          docker build -f solutions/Dockerfile.hardened \
+            --build-arg IMAGE_TAG=snake:v2 \
+            -t ghcr.io/${{ github.repository_owner }}/dedih-snake:v1 app
+
+      - name: Scan it, and fail on anything critical
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/dedih-snake:v1
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        run: docker push ghcr.io/${{ github.repository_owner }}/dedih-snake:v1

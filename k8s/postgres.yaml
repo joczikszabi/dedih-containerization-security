@@ -1,0 +1,63 @@
+# A database in a pod, which is exactly what you should not do in production
+# and exactly the right thing to do in a lab.
+#
+# Note there is no volume. Delete this pod and every score goes with it. That
+# is deliberate: it is the difference between a stateless workload, which the
+# application is, and a stateful one, which this is. Making it survive needs a
+# PersistentVolumeClaim, and that is a conversation, not a line of YAML.
+#
+# The credentials come from a Secret you create by hand, so they are not in
+# this repository. See docs/LAB.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: snake-db
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "snake"]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        # emptyDir lives and dies with the pod. See the note above.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

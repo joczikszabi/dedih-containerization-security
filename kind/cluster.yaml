@@ -1,0 +1,15 @@
+# One node is plenty. The port mapping is what matters here.
+#
+# `kubectl port-forward` picks a single pod and stays on it, so with three
+# replicas you would talk to the same one every time and never see the load
+# balancing. Publishing a NodePort out of the kind node instead sends traffic
+# through kube-proxy, which does spread it, and NodePort is a real Service type
+# rather than a debugging tool.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP

