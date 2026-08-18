@@ -15,7 +15,7 @@ COPY . .
 RUN npm install
 RUN npm run build
 
-ARG IMAGE_TAG=snake:v1
+ARG IMAGE_TAG=dev
 ENV IMAGE_TAG=$IMAGE_TAG
 
 EXPOSE 3000

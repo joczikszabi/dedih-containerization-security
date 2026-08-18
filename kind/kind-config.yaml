@@ -7,6 +7,9 @@
 # rather than a debugging tool.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+# Without this the cluster is called "kind", and every --name dedih afterwards
+# fails with "no nodes found for cluster".
+name: dedih
 nodes:
   - role: control-plane
     extraPortMappings:

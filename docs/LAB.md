@@ -38,16 +38,10 @@ A maradék 8 találat az alap image-ből származik, egy sem a saját kódunkbó
 
 ## Fontos tudnivalók
 
-**1. Ma nincs szükség Azure előfizetésre.** Minden a saját Codespace-edben fut.
-Nincs felhő, nincs költség, nincs kvóta.
+**Ha elakadsz, a `solutions/` mappában megtalálod a kész megoldást.** Másold be,
+és haladj tovább.
 
-**2. Ma sem kell semmit git-be pusholni.** Forkolod a repót, nyitsz rajta egy
-Codespace-t, ott szerkesztesz és futtatsz.
-
-**3. Ha elakadsz, a `solutions/` mappában megtalálod a kész megoldást.** Másold
-be, és haladj tovább.
-
-**4. A nap végén töröld a Codespace-t.**
+**A nap végén töröld a Codespace-t.**
 
 ---
 
@@ -158,7 +152,7 @@ docker build -t snake:step0 .
 docker images snake:step0
 ```
 
-Jegyezd fel a méretet. Nálam **1.78 GB**.
+Jegyezd fel a méretet. Körülbelül **1.78 GB** lesz.
 
 Indítsd el:
 
@@ -168,6 +162,12 @@ docker run --rm -p 3000:3000 snake:step0
 
 A Codespace felajánlja a 3000-es portot. Nyisd meg, és játssz egy kört.
 Nyilakkal irányíthatsz, szóközzel szüneteltethetsz.
+
+> A státusz panelen az `Image` sor `dev`-et mutat, nem `snake:step0`-t. Ez nem
+> hiba: egy image nem tudja, milyen taggel hivatkozol rá. A tag csak egy külső
+> címke, a `-t snake:step0` a te gépeden létezik, az image-en belül nem. Ha
+> mégis látni akarod, a build vagy az indítás adja meg neki:
+> `docker run --rm -p 3000:3000 -e IMAGE_TAG=snake:step0 snake:step0`
 
 A `Leaderboard` sor azt írja: `this pod only`. Fut egy adatbázisod is az előbb,
 mégsem találja. Erre a 3. blokkban visszatérünk.
@@ -187,6 +187,11 @@ docker build -t snake:step1 .
 
 A méret alig változik, a build viszont sokkal gyorsabb lesz. Eddig a saját
 `node_modules` mappád is felment a build kontextusba, teljesen fölöslegesen.
+
+> A `.dockerignore` biztonsági szempontból is számít. A `COPY . .` mindent
+> bemásol, amit a build kontextusban talál: `.env` fájlt, `.git` mappát,
+> kulcsokat. Ami egyszer belekerült egy rétegbe, azt bárki kiolvassa, aki le
+> tudja húzni az image-et. Ezért van a listán a `.env` és a `.git` is.
 
 ### 2.3 Csak production függőségek
 
@@ -240,8 +245,6 @@ az első image-ben, pedig egyikre sincs szükség futásidőben.
 
 > Ha elakadtál: `cp ../solutions/Dockerfile.hardened Dockerfile`
 
-Írd be a chatbe, hány MB lett a tiéd.
-
 ### 2.5 Devcontainer
 
 Nyisd meg a `.devcontainer/Dockerfile` fájlt.
@@ -280,26 +283,39 @@ környezethez, és mindenki ugyanazt kapja.
 
 ### 3.1 Mi van az image-ben?
 
-Nézzünk meg egy közismert, hivatalos image-et:
+A `trivy image` önmagában több száz sornyi táblázatot ír ki, ami a terminálban
+olvashatatlan. Most a darabszám az érdekes, ezért van a repóban egy `scan.sh`,
+ami csak azt mutatja:
 
 ```bash
-trivy image --severity CRITICAL,HIGH node:22
+cd /workspaces/dedih-containerization-security
+./scan.sh node:22 node:22-alpine snake:step0 snake:v1
 ```
 
-Több száz találat. Ez nem a te hibád, és nem is a Node.js csapaté: egy teljes
-Debian van benne, a hozzá tartozó összes csomaggal.
+Körülbelül ezt kapod:
 
-Most a tiédet, előtte és utána:
+```
+node:22                419 CRITICAL+HIGH
+node:22-alpine         8 CRITICAL+HIGH
+snake:step0            419 CRITICAL+HIGH
+snake:v1               8 CRITICAL+HIGH
+```
+
+Olvassuk el sorban. A `node:22` egy teljes Debiant tartalmaz a hozzá tartozó
+összes csomaggal, innen a több száz találat. A `node:22-alpine` sokkal kevesebb
+csomagot visz magával, ott 8 van. A mi első image-ünk a `node:22`-re épült, és
+ugyanannyi találata van. A mostani az alpine-ra épül, és szintén 8.
+
+Vagyis a maradék 8 nem a mi kódunkból jön, hanem az alap image-ből. Ezért
+számít, hogy melyik alap image-et választod, és hogy milyen gyakran építed
+újra: a javítás nálad úgy érkezik meg, hogy újraépíted az image-et egy frissebb
+alapra.
+
+Ezt a nyolcat érdemes megnézni részletesen is, ennyi már elfér a képernyőn:
 
 ```bash
-trivy image --severity CRITICAL,HIGH snake:step0
 trivy image --severity CRITICAL,HIGH snake:v1
 ```
-
-Nálam 419-ről 8-ra csökkent. A `node:22-alpine` image-ben szintén pontosan 8
-van, vagyis a maradék mind az alap image-ből jön, egy sem a saját kódunkból.
-Ezért fontos, hogy melyik alap image-et választod, és hogy milyen gyakran
-építed újra.
 
 ### 3.2 Ne rootként fusson
 
@@ -307,8 +323,20 @@ Ezért fontos, hogy melyik alap image-et választod, és hogy milyen gyakran
 docker run --rm snake:v1 id -u
 ```
 
-Nulla, vagyis root. Ha valaki hibát talál az alkalmazásban, rögtön rootként áll
-a konténerben.
+Nulla, vagyis root.
+
+Ez önmagában még nem jelenti azt, hogy valaki a gépeden is root. A konténer
+root felhasználója alapesetben nem azonos a host root felhasználójával. Amit
+viszont ad egy támadónak:
+
+- Írhat minden becsatolt volume-ba, root jogosultsággal. Ha oda a host egy
+  mappája van bekötve, akkor a host fájljait írja.
+- Telepíthet magának eszközöket a konténerbe, és onnan mehet tovább.
+- A legtöbb konténerből való kitöréshez ez az első lépés. Ha nem root, akkor
+  a támadási lehetőségek egy egész csoportja eltűnik.
+
+Az 5. blokkban pontosan ezt fogjuk kihasználni, csak akkor mi leszünk a
+támadó oldalon.
 
 Tedd a `Dockerfile` végére, a `CMD` elé:
 
@@ -324,38 +352,10 @@ docker run --rm -p 3000:3000 -e IMAGE_TAG=snake:v2 snake:v2
 
 A státusz panelen a `Running as` sor most zöld: `node (uid 1000)`.
 
-### 3.3 Ne kerüljön titok az image-be
+### 3.3 Miért nem találták egymást?
 
-Csinálj egy titkot, és építsd meg az eredeti, optimalizálatlan Dockerfile-lal,
-`.dockerignore` nélkül:
-
-```bash
-echo "DB_PASSWORD=SUPER_SECRET_12345" > .env
-mv .dockerignore .dockerignore.off
-docker build -f ../solutions/Dockerfile.naive -t snake:leaky .
-docker run --rm snake:leaky cat /app/.env
-```
-
-Ott a jelszó. A `COPY . .` mindent bemásolt, a `.env` fájlt is, és aki le tudja
-húzni az image-et, el is tudja olvasni.
-
-Most állítsuk vissza, és próbáljuk meg a mostani Dockerfile-lal:
-
-```bash
-mv .dockerignore.off .dockerignore
-docker build -t snake:v2 .
-docker run --rm snake:v2 cat /app/.env    # nincs ilyen fájl
-rm .env
-```
-
-Két dolog is megvédett. A `.dockerignore` eleve ki sem engedte a build
-kontextusba, a multi-stage build pedig csak a lefordított eredményt hozta át a
-végleges image-be.
-
-### 3.4 Docker Compose
-
-Emlékszel, hogy a 2.1-ben futott egy adatbázisod, az alkalmazás mégsem találta?
-Nézzük meg, miért.
+A 2.1-ben futott egy adatbázisod, az alkalmazás mégsem találta. Nézzük meg,
+miért.
 
 Indítsuk el megint mindkettőt külön:
 
@@ -366,22 +366,51 @@ docker run -d --name db -e POSTGRES_USER=snake -e POSTGRES_PASSWORD=snakepw \
 docker run -d --name snake -p 3000:3000 \
   -e DATABASE_URL='postgres://snake:snakepw@db:5432/snake' snake:v2
 sleep 10
-curl -s localhost:3000/api/health
+curl -s localhost:3000/api/health | jq .db
 ```
 
-```
-{"db":"unavailable","detail":"Connecting, attempt 4 of 6 failed.", ...}
+`"unavailable"`. Az alkalmazás nem találja a `db` nevű gépet:
+
+```bash
+docker exec snake getent hosts db || echo "nincs ilyen név"
 ```
 
-Az alkalmazás nem találja a `db` nevű gépet. A két konténer a Docker
-alapértelmezett hálózatán van, ahol nincs névfeloldás. Nem hibáztak, csak nem
-tudnak egymásról.
+Mindkét konténer a Docker alapértelmezett hálózatán van, és ott **nincs
+névfeloldás**. IP címmel elérnék egymást, névvel nem.
+
+Csináljunk egy saját hálózatot, és tegyük rá mindkettőt:
 
 ```bash
 docker rm -f db snake
+docker network create snakenet
+docker run -d --name db --network snakenet -e POSTGRES_USER=snake \
+  -e POSTGRES_PASSWORD=snakepw -e POSTGRES_DB=snake postgres:17-alpine
+docker run -d --name snake --network snakenet -p 3000:3000 \
+  -e DATABASE_URL='postgres://snake:snakepw@db:5432/snake' snake:v2
+sleep 10
+curl -s localhost:3000/api/health | jq .db
 ```
 
-Most nézd meg a `compose.yaml` fájlt a repo gyökerében.
+`"ok"`. Docker Compose nélkül, csak egy saját hálózattal. A saját hálózaton a
+Docker névfeloldást ad, és a konténer neve lesz a hostnév.
+
+```bash
+docker exec snake getent hosts db
+docker rm -f db snake && docker network rm snakenet
+```
+
+> Nem `localhost` szerepel a `DATABASE_URL`-ben. A konténeren belül a
+> `localhost` maga a konténer, nem a szomszédja.
+
+### 3.4 Akkor mire jó a Compose?
+
+Számold össze, hány parancs kellett az előbb: hálózat létrehozása, adatbázis
+négy környezeti változóval, alkalmazás a saját változóival és a portjával,
+majd a végén a takarítás. Holnap ugyanezt újra be kell gépelned, és emlékezned
+kell a sorrendre meg minden értékre.
+
+A `compose.yaml` ugyanezt leírja egy fájlban, ami bekerül a repóba. Nézd meg a
+repo gyökerében.
 
 > A fájl neve régebben `docker-compose.yml` volt, és a legtöbb létező projektben
 > még mindig így hívják. A mai ajánlott név a `compose.yaml`, de a Docker
@@ -393,28 +422,14 @@ Indítsd el:
 docker compose up --build
 ```
 
-Egy másik terminálban:
+A Compose létrehozta a hálózatot, elindította mindkét service-t a megfelelő
+sorrendben, és a service nevén regisztrálta őket. Nyisd meg a 3000-es portot:
+a `Leaderboard` sor zöld, `shared database`. Játssz egy kört, a pontszámod
+frissítés után is megmarad.
 
-```bash
-curl -s localhost:3000/api/health
-```
-
-```
-{"db":"ok","detail":"Connected, scores table ready.", "store":"database", ...}
-```
-
-A Compose létrehozott egy hálózatot a két service-nek, és mindkettőt
-regisztrálta a saját nevén. Ezért lett a `db` valódi hostnév:
-
-```bash
-docker compose exec snake getent hosts db
-```
-
-Nyisd meg a böngészőben a 3000-es portot. A `Leaderboard` sor zöld:
-`shared database`. Játssz egy kört, és a pontszámod frissítés után is megmarad.
-
-> Figyeld meg, hogy nem `localhost` szerepel a `DATABASE_URL`-ben. A konténeren
-> belül a `localhost` maga a konténer.
+A lényeg tehát nem az, hogy a Compose olyat tud, amit a `docker run` nem. Azt
+tudja, hogy a beállítás leírva marad, verziózva, a kód mellett, és egyetlen
+paranccsal újra előállítható, illetve `docker compose down`-nal eltakarítható.
 
 ### 3.5 Ameddig a Compose elég, és ameddig nem
 

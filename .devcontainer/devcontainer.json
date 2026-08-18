@@ -10,10 +10,19 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
-  "forwardPorts": [3000, 8080],
+  "forwardPorts": [
+    3000,
+    8080
+  ],
   "portsAttributes": {
-    "3000": { "label": "Snake (Docker)", "onAutoForward": "notify" },
-    "8080": { "label": "Snake (Kubernetes)", "onAutoForward": "notify" }
+    "3000": {
+      "label": "Snake (Docker)",
+      "onAutoForward": "notify"
+    },
+    "8080": {
+      "label": "Snake (Kubernetes)",
+      "onAutoForward": "notify"
+    }
   },
   "customizations": {
     "vscode": {
@@ -21,7 +30,19 @@
         "ms-azuretools.vscode-docker",
         "ms-kubernetes-tools.vscode-kubernetes-tools",
         "esbenp.prettier-vscode"
-      ]
+      ],
+      "settings": {
+        "yaml.schemas": {
+          "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.31.0-standalone-strict/all.json": [
+            "k8s/*.yaml"
+          ]
+        },
+        "yaml.customTags": [
+          "!reset",
+          "!override"
+        ],
+        "redhat.telemetry.enabled": false
+      }
     }
   }
 }

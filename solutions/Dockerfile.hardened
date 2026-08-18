@@ -25,7 +25,7 @@ COPY --from=build /app/dist ./dist
 COPY server.js ./
 COPY lib ./lib
 
-ARG IMAGE_TAG=snake:v2
+ARG IMAGE_TAG=dev
 ENV IMAGE_TAG=$IMAGE_TAG
 
 # node:alpine ships a `node` user with uid 1000. Using it costs nothing and

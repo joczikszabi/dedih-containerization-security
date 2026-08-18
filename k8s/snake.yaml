@@ -41,6 +41,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # The downward API can expose the pod name, the namespace and the
+            # node, but not the container's own image. If you want the tag on
+            # screen you have to pass it, and keep it in step with `image:`
+            # above. Same reason the panel shows "dev" under plain docker.
+            - name: IMAGE_TAG
+              value: snake:v2
           # Readiness decides whether this pod receives traffic at all.
           # Liveness decides whether it gets restarted. They are different
           # questions and they deserve different probes.
