@@ -1,0 +1,40 @@
+# Two containers that can reach each other.
+#
+# Starting the application and a database with two separate `docker run`
+# commands does not get you a working system. They come up on Docker's default
+# network, which has no name resolution, so the application cannot find a host
+# called `db` and reports that it has no database.
+#
+# Compose creates a network for these services and registers each one under its
+# service name. That is the whole difference: `db` below is a real hostname
+# because the service underneath is called `db`.
+#
+# Note it is not `localhost`. Inside a container, localhost is that container.
+
+services:
+  snake:
+    build: ./app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://snake:snakepw@db:5432/snake
+      IMAGE_TAG: snake:compose
+    depends_on:
+      db:
+        # The application survives a database that is not ready yet, because it
+        # retries. Waiting anyway keeps the demonstration clean.
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: snake
+      POSTGRES_PASSWORD: snakepw
+      POSTGRES_DB: snake
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snake"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    # No volume, on purpose. `docker compose down` takes the scores with it,
+    # which is the same point the Postgres pod makes again in block 4.

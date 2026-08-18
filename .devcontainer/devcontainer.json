@@ -1,6 +1,8 @@
 {
   "name": "DEDIH Containerization and Security",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {

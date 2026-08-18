@@ -1,0 +1,22 @@
+# A copy of the Dockerfile block 2 starts from, kept so block 3 can rebuild the
+# unoptimised image and show what ends up inside it.
+#
+# Single stage and COPY . ., which is the combination that leaks files.
+FROM node:22
+
+WORKDIR /app
+
+# No .dockerignore yet, so this copies your local node_modules and dist too.
+COPY . .
+
+# Installs devDependencies as well: vite, eslint, typescript, all of it.
+RUN npm install
+RUN npm run build
+
+ARG IMAGE_TAG=snake:v1
+ENV IMAGE_TAG=$IMAGE_TAG
+
+EXPOSE 3000
+
+# Runs as root, because nothing said otherwise.
+CMD ["npm", "start"]

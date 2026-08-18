@@ -7,8 +7,13 @@ végigcsinálunk. Ha lemaradsz, ebből egyedül is tudsz haladni tovább.
 
 ## Mit csinálunk ma
 
-Ma egy Snake játékot teszünk konténerbe, majd Kubernetesen futtatjuk. Közben az
-image jóval kisebb és biztonságosabb lesz.
+| Blokk | Téma |
+| --- | --- |
+| 1 | Mi az a konténer, és miért jó. Elindítunk egy Postgres-t egy paranccsal. |
+| 2 | Dockerfile: megépítjük a Snake játék image-ét, aztán optimalizáljuk. |
+| 3 | Biztonság és Docker Compose. |
+| 4 | Kubernetes alapok. |
+| 5 | Kubernetes biztonsági beállítások. |
 
 A játék mellett van egy státusz panel. Ez mutatja, hogy éppen hol és hogyan fut
 az alkalmazás:
@@ -20,7 +25,7 @@ Running as    node (uid 1000)
 Leaderboard   shared database
 ```
 
-**Ugyanaz az alkalmazás, három lépésben.** Ide jutunk el a nap végére:
+Ide jutunk el a nap végére:
 
 | | Image mérete | CRITICAL + HIGH sebezhetőség | Milyen userként fut |
 | --- | --- | --- | --- |
@@ -34,16 +39,15 @@ A maradék 8 találat az alap image-ből származik, egy sem a saját kódunkbó
 ## Fontos tudnivalók
 
 **1. Ma nincs szükség Azure előfizetésre.** Minden a saját Codespace-edben fut.
-Nincs felhő, nincs költség, nincs kvóta, és nincs mit leállítani a nap végén.
+Nincs felhő, nincs költség, nincs kvóta.
 
 **2. Ma sem kell semmit git-be pusholni.** Forkolod a repót, nyitsz rajta egy
 Codespace-t, ott szerkesztesz és futtatsz.
 
 **3. Ha elakadsz, a `solutions/` mappában megtalálod a kész megoldást.** Másold
-be, és haladj tovább. Semmi baj, ha nem elsőre jön össze.
+be, és haladj tovább.
 
-**4. A nap végén töröld a Codespace-t.** A GitHub free tier általában fedezi,
-de fölöslegesen ne fusson.
+**4. A nap végén töröld a Codespace-t.**
 
 ---
 
@@ -53,13 +57,13 @@ de fölöslegesen ne fusson.
 2. Jobb felül **Fork**, majd **Create fork**.
 3. A **saját** forkodon: zöld **Code** gomb, **Codespaces** fül,
    **Create codespace on main**.
-4. Az első indítás három-négy perc. Közben feltelepül a Docker, a `kubectl`,
-   a `kind` és a `trivy`.
+4. Az első indítás három-négy perc.
 
 Ha kész, ellenőrizd:
 
 ```bash
 docker --version
+docker compose version
 kubectl version --client
 kind --version
 trivy --version
@@ -74,62 +78,79 @@ trivy --version
 
 ## 1. Blokk: mi az a konténer
 
-### 1.1 Futtass egy konténert
+### 1.1 Indíts el egy adatbázist egy paranccsal
 
 ```bash
-docker run --rm -p 3000:3000 ghcr.io/joczikszabi/dedih-snake:v1
+docker run -d --name db \
+  -e POSTGRES_USER=snake \
+  -e POSTGRES_PASSWORD=snakepw \
+  -e POSTGRES_DB=snake \
+  postgres:17-alpine
+docker ps
 ```
 
-> Ha ez nem működik (például mert a registry nem elérhető), építsd meg magad.
-> Két-három perc, és a következő blokkban úgyis foglalkozunk vele:
->
-> ```bash
-> cd app && docker build -t snake:v1 . && docker run --rm -p 3000:3000 snake:v1
-> ```
+Nézzük meg, hogy tényleg működik:
 
-A Codespace felajánlja a 3000-es portot. Nyisd meg, és játssz egy kört.
-Nyilakkal irányíthatsz, szóközzel szüneteltethetsz.
+```bash
+docker exec -it db psql -U snake -d snake -c "SELECT version();"
+```
 
-Nem telepítettél Node.js-t, és nincs is a gépeden. Az image mindent tartalmaz,
-amire az alkalmazásnak szüksége van.
+Nem telepítettél Postgres-t, nincs is a gépeden, és mégis fut egy adatbázis.
+Ez a konténer legfontosabb tulajdonsága: valaki más összerakta, te pedig
+elindítod.
 
 ### 1.2 Nézz bele
 
-Új terminálban:
-
 ```bash
-docker ps
-docker exec -it $(docker ps -q --filter ancestor=ghcr.io/joczikszabi/dedih-snake:v1) sh
+docker exec -it db sh
 ```
 
 A konténeren belül:
 
 ```sh
+whoami      # postgres
 ps aux      # csak a saját folyamatait látja
 ls /        # saját fájlrendszer
-whoami      # root
 exit
 ```
 
-Majd kívül:
+Ugyanaz a folyamat kívülről is látszik:
 
 ```bash
-ps aux | grep node
+ps aux | grep postgres | head -3
 ```
 
-Ugyanaz a folyamat, csak máshonnan nézve. A konténer nem virtuális gép:
-ugyanazon a kernelen fut, mint a Codespace, csak el van szigetelve tőle. Ez a
-különbség a nap végén lesz fontos.
+A konténer nem virtuális gép. Ugyanazon a kernelen fut, mint a Codespace, csak
+el van szigetelve tőle. Ez a különbség a nap végén lesz fontos.
 
-A konténert `Ctrl+C`-vel állíthatod le abban a terminálban, amelyikben fut.
+Állítsuk le egyelőre:
+
+```bash
+docker stop db && docker rm db
+```
+
+### 1.3 A repo felépítése
+
+```
+app/               a Snake játék forráskódja és a Dockerfile
+compose.yaml       két konténer együtt, ezt a 3. blokkban használjuk
+kind/              a helyi Kubernetes cluster beállítása
+k8s/               Kubernetes manifest fájlok
+solutions/         kész megoldások, ha elakadsz
+docs/LAB.md        ez a dokumentum
+```
+
+A `app/` mappában egy egyszerű Node.js alkalmazás van: egy Snake játék, mellette
+egy szerver, ami a toplistát kezeli. Ezt fogjuk konténerbe tenni.
 
 ---
 
-## 2. Blokk: hogyan épül fel egy image
+## 2. Blokk: Dockerfile
 
-A repóban van egy `app/Dockerfile`. Ez működik, de sok probléma van vele.
+### 2.1 Építsd meg az első image-et
 
-### 2.1 Építsd meg
+A `app/Dockerfile` egy tipikus, első nekifutásra megírt JavaScript Dockerfile.
+Működik, de sok probléma van vele.
 
 ```bash
 cd app
@@ -139,7 +160,19 @@ docker images snake:step0
 
 Jegyezd fel a méretet. Nálam **1.78 GB**.
 
-### 2.2 Első lépés: `.dockerignore`
+Indítsd el:
+
+```bash
+docker run --rm -p 3000:3000 snake:step0
+```
+
+A Codespace felajánlja a 3000-es portot. Nyisd meg, és játssz egy kört.
+Nyilakkal irányíthatsz, szóközzel szüneteltethetsz.
+
+A `Leaderboard` sor azt írja: `this pod only`. Fut egy adatbázisod is az előbb,
+mégsem találja. Erre a 3. blokkban visszatérünk.
+
+### 2.2 `.dockerignore`
 
 ```bash
 cat > .dockerignore <<'EOF'
@@ -150,13 +183,12 @@ dist
 .env
 EOF
 docker build -t snake:step1 .
-docker images | head -4
 ```
 
 A méret alig változik, a build viszont sokkal gyorsabb lesz. Eddig a saját
 `node_modules` mappád is felment a build kontextusba, teljesen fölöslegesen.
 
-### 2.3 Második lépés: csak production függőségek
+### 2.3 Csak production függőségek
 
 A `Dockerfile`-ban cseréld ki ezt:
 
@@ -173,7 +205,7 @@ RUN npm ci --omit=dev
 Így viszont a `npm run build` hibára fut, mert a `vite` devDependency. Ezt a
 problémát oldja meg a következő lépés.
 
-### 2.4 Harmadik lépés: multi-stage build
+### 2.4 Multi-stage build
 
 Két szakasz. Az elsőben megvan az egész eszközkészlet, és lefordítjuk a
 frontendet. A másodikba már csak a kész eredmény kerül át.
@@ -199,7 +231,7 @@ CMD ["node", "server.js"]
 ```
 
 ```bash
-docker build -t snake:step3 .
+docker build -t snake:v1 .
 docker images | head -5
 ```
 
@@ -212,56 +244,41 @@ az első image-ben, pedig egyikre sincs szükség futásidőben.
 
 ### 2.5 Devcontainer
 
-Nyisd meg a repo gyökerében a `.devcontainer/devcontainer.json` fájlt.
+Nyisd meg a `.devcontainer/Dockerfile` fájlt.
 
-```json
-"image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
-"features": {
-  "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-  "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {}
-}
+```dockerfile
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm
+
+ARG KIND_VERSION=v0.30.0
+ARG TRIVY_VERSION=0.74.0
+
+RUN ... kind
+RUN ... trivy
 ```
 
-Ez a fájl írja le azt a gépet, amiben most dolgozol. A Codespace nem virtuális
-gép, hanem konténer. Ezért van mindenkinél ugyanaz a Node verzió és ugyanaz a
-`kubectl`, és ezért nem kellett senkinek semmit telepítenie.
+Ez ugyanolyan Dockerfile, mint amit az előbb írtál. `FROM`, `RUN`, rétegek,
+pinnelt verziók. Csak nem egy alkalmazást csomagol, hanem azt a környezetet,
+amiben most dolgozol.
 
-Ugyanaz a technológia, csak nem a production, hanem a saját fejlesztői
-környezeted felé fordítva. Egy új kolléga így két nap helyett öt perc alatt jut
-működő környezethez.
+A mellette lévő `devcontainer.json` mondja meg, hogy melyik Dockerfile-ból
+épüljön, milyen portok legyenek nyitva, és milyen VS Code extension-ök
+települjenek.
+
+Ezért van mindenkinél ugyanaz a Node verzió és ugyanaz a `kubectl`, és ezért
+nem kellett senkinek semmit telepítenie.
+
+> Ez nem Codespaces-specifikus. Ugyanez a két fájl működik lokálisan is, VS
+> Code-ban a Dev Containers extension-nel, vagy a `devcontainer` CLI-vel. A
+> Codespaces csak az egyik hely, ahol el lehet indítani.
+
+Gyakorlati haszna: egy új kolléga két nap helyett öt perc alatt jut működő
+környezethez, és mindenki ugyanazt kapja.
 
 ---
 
-## 3. Blokk: mi van az image-ben
+## 3. Blokk: biztonság és Compose
 
-### 3.1 A törölt fájl
-
-Hozz létre egy titkot, aztán töröld le a Dockerfile-ban:
-
-```bash
-cd /workspaces/dedih-containerization-security/app
-echo "DB_PASSWORD=SUPER_SECRET_12345" > .env
-docker build -f ../solutions/Dockerfile.leaky -t snake:leaky .
-```
-
-Most keressük meg:
-
-```bash
-docker history snake:leaky
-mkdir -p /tmp/leaky && docker save snake:leaky -o /tmp/leaky.tar
-tar -xf /tmp/leaky.tar -C /tmp/leaky
-grep -r "SUPER_SECRET" /tmp/leaky 2>/dev/null | head -3
-```
-
-Kitörölted, mégis benne maradt. Egy image rétegek sorozata, és a törlés is csak
-egy újabb réteg, ami annyit jelent, hogy ez a fájl már nincs ott. Ami alatta
-van, az megmarad, és aki le tudja húzni az image-et, el is tudja olvasni.
-
-```bash
-rm .env
-```
-
-### 3.2 Sebezhetőségek
+### 3.1 Mi van az image-ben?
 
 Nézzünk meg egy közismert, hivatalos image-et:
 
@@ -272,11 +289,11 @@ trivy image --severity CRITICAL,HIGH node:22
 Több száz találat. Ez nem a te hibád, és nem is a Node.js csapaté: egy teljes
 Debian van benne, a hozzá tartozó összes csomaggal.
 
-Most a tiédet:
+Most a tiédet, előtte és utána:
 
 ```bash
 trivy image --severity CRITICAL,HIGH snake:step0
-trivy image --severity CRITICAL,HIGH snake:step3
+trivy image --severity CRITICAL,HIGH snake:v1
 ```
 
 Nálam 419-ről 8-ra csökkent. A `node:22-alpine` image-ben szintén pontosan 8
@@ -284,10 +301,10 @@ van, vagyis a maradék mind az alap image-ből jön, egy sem a saját kódunkbó
 Ezért fontos, hogy melyik alap image-et választod, és hogy milyen gyakran
 építed újra.
 
-### 3.3 Ne rootként fusson
+### 3.2 Ne rootként fusson
 
 ```bash
-docker run --rm snake:step3 id -u
+docker run --rm snake:v1 id -u
 ```
 
 Nulla, vagyis root. Ha valaki hibát talál az alkalmazásban, rögtön rootként áll
@@ -302,35 +319,138 @@ USER node
 ```bash
 docker build -t snake:v2 .
 docker run --rm snake:v2 id -u     # 1000
-```
-
-Indítsd el, és nézd meg a státusz panelt:
-
-```bash
 docker run --rm -p 3000:3000 -e IMAGE_TAG=snake:v2 snake:v2
 ```
 
-A `Running as` sor most zöld: `node (uid 1000)`.
+A státusz panelen a `Running as` sor most zöld: `node (uid 1000)`.
 
-> Nem technikai kollégáknak: ha valaki konténerben szállít nektek szoftvert,
-> négy kérdéssel a problémák nagy részét ki lehet szűrni. Melyik alap image-re
-> épül? Mikor építették újra utoljára? Meg lehet kapni a scan riportot?
-> Rootként fut?
+### 3.3 Ne kerüljön titok az image-be
+
+Csinálj egy titkot, és építsd meg az eredeti, optimalizálatlan Dockerfile-lal,
+`.dockerignore` nélkül:
+
+```bash
+echo "DB_PASSWORD=SUPER_SECRET_12345" > .env
+mv .dockerignore .dockerignore.off
+docker build -f ../solutions/Dockerfile.naive -t snake:leaky .
+docker run --rm snake:leaky cat /app/.env
+```
+
+Ott a jelszó. A `COPY . .` mindent bemásolt, a `.env` fájlt is, és aki le tudja
+húzni az image-et, el is tudja olvasni.
+
+Most állítsuk vissza, és próbáljuk meg a mostani Dockerfile-lal:
+
+```bash
+mv .dockerignore.off .dockerignore
+docker build -t snake:v2 .
+docker run --rm snake:v2 cat /app/.env    # nincs ilyen fájl
+rm .env
+```
+
+Két dolog is megvédett. A `.dockerignore` eleve ki sem engedte a build
+kontextusba, a multi-stage build pedig csak a lefordított eredményt hozta át a
+végleges image-be.
+
+### 3.4 Docker Compose
+
+Emlékszel, hogy a 2.1-ben futott egy adatbázisod, az alkalmazás mégsem találta?
+Nézzük meg, miért.
+
+Indítsuk el megint mindkettőt külön:
+
+```bash
+cd /workspaces/dedih-containerization-security
+docker run -d --name db -e POSTGRES_USER=snake -e POSTGRES_PASSWORD=snakepw \
+  -e POSTGRES_DB=snake postgres:17-alpine
+docker run -d --name snake -p 3000:3000 \
+  -e DATABASE_URL='postgres://snake:snakepw@db:5432/snake' snake:v2
+sleep 10
+curl -s localhost:3000/api/health
+```
+
+```
+{"db":"unavailable","detail":"Connecting, attempt 4 of 6 failed.", ...}
+```
+
+Az alkalmazás nem találja a `db` nevű gépet. A két konténer a Docker
+alapértelmezett hálózatán van, ahol nincs névfeloldás. Nem hibáztak, csak nem
+tudnak egymásról.
+
+```bash
+docker rm -f db snake
+```
+
+Most nézd meg a `compose.yaml` fájlt a repo gyökerében.
+
+> A fájl neve régebben `docker-compose.yml` volt, és a legtöbb létező projektben
+> még mindig így hívják. A mai ajánlott név a `compose.yaml`, de a Docker
+> mindkettőt felismeri. Ugyanaz a fájl, ugyanaz a tartalom.
+
+Indítsd el:
+
+```bash
+docker compose up --build
+```
+
+Egy másik terminálban:
+
+```bash
+curl -s localhost:3000/api/health
+```
+
+```
+{"db":"ok","detail":"Connected, scores table ready.", "store":"database", ...}
+```
+
+A Compose létrehozott egy hálózatot a két service-nek, és mindkettőt
+regisztrálta a saját nevén. Ezért lett a `db` valódi hostnév:
+
+```bash
+docker compose exec snake getent hosts db
+```
+
+Nyisd meg a böngészőben a 3000-es portot. A `Leaderboard` sor zöld:
+`shared database`. Játssz egy kört, és a pontszámod frissítés után is megmarad.
+
+> Figyeld meg, hogy nem `localhost` szerepel a `DATABASE_URL`-ben. A konténeren
+> belül a `localhost` maga a konténer.
+
+### 3.5 Ameddig a Compose elég, és ameddig nem
+
+Próbáljunk három példányt indítani az alkalmazásból:
+
+```bash
+docker compose up -d --scale snake=3
+```
+
+```
+Error response from daemon: failed to set up container networking:
+Bind for 0.0.0.0:3000 failed: port is already allocated
+```
+
+A Compose egy gépen tud több service-t egymás mellett futtatni. Azt viszont nem
+tudja, hogy három példányt tegyen egyetlen cím mögé, elossza köztük a
+forgalmat, és újraindítsa azt, amelyik meghal. Erről szól a következő blokk.
+
+```bash
+docker compose down
+```
 
 ---
 
-## 4. Blokk: Kubernetes
+## 4. Blokk: Kubernetes alapok
 
 ### 4.1 Indíts egy clustert
+
+A `kind` egy Kubernetes clustert futtat Docker konténerekben. Így nincs
+szükség se felhőre, se külön gépre.
 
 ```bash
 cd /workspaces/dedih-containerization-security
 kind create cluster --config kind/cluster.yaml
 kubectl get nodes
 ```
-
-Körülbelül egy perc. A cluster egy Docker konténerben fut, a Codespace-eden
-belül.
 
 Az image-et át kell adni a clusternek, mert nincs registry:
 
@@ -346,10 +466,9 @@ kubectl get pods
 kubectl rollout status deployment/snake
 ```
 
-Nyisd meg a 8080-as portot a Codespace-ben. A játék most Kubernetesen fut.
+Nyisd meg a 8080-as portot. A játék most Kubernetesen fut.
 
-A státusz panel `Pod` sora most már ki van töltve. A `Leaderboard` sor viszont
-azt írja: `this pod only`.
+A státusz panel `Pod` sora most már ki van töltve.
 
 ### 4.3 Skálázás
 
@@ -358,8 +477,8 @@ kubectl scale deployment/snake --replicas=3
 kubectl get pods
 ```
 
-Frissítsd a böngészőt többször. A `Pod` sor változik. Három példány fut, és nem
-mindig ugyanaz válaszol.
+Frissítsd a böngészőt többször. A `Pod` sor változik. Három példány fut egyetlen
+cím mögött, és nem mindig ugyanaz válaszol. Ezt a Compose nem tudta.
 
 ### 4.4 Mi történik, ha törlünk egy podot?
 
@@ -371,17 +490,18 @@ kubectl get pods
 Visszajött magától. Ezt nem te csináltad, hanem a cluster. Te azt mondtad, hogy
 három példány legyen, és a Kubernetes ezt tartja fenn.
 
-### 4.5 Játssz, és nézd meg a toplistát
+### 4.5 A toplista, három példánnyal
 
-Játssz egy kört, írd be a nevedet, küldd be a pontszámot. Utána frissítsd a
-lapot néhányszor.
+Játssz egy kört, küldd be a pontszámot, majd frissítsd a lapot néhányszor.
 
 A pontszámod hol megjelenik, hol nem.
 
-Ennek az az oka, hogy a toplista annak a pod-nak a memóriájában van, amelyik
-éppen fogadta a kérésedet. A másik kettő nem tud róla. Ez a mai nap
-legfontosabb tanulsága: a konténer eldobható, és ami benne van, az vele együtt
-eltűnik.
+Ennek az az oka, hogy most nincs adatbázis, a toplista pedig annak a podnak a
+memóriájában van, amelyik éppen fogadta a kérésedet. A másik kettő nem tud róla.
+A Compose-nál ez nem tűnt fel, mert ott egyetlen példány futott.
+
+Ez a mai nap legfontosabb tanulsága: a konténer eldobható, és ami benne van, az
+vele együtt eltűnik.
 
 ### 4.6 Adatbázis és Secret
 
@@ -409,28 +529,16 @@ kubectl set env deployment/snake --from=secret/snake-db --keys=DATABASE_URL
 kubectl rollout status deployment/snake
 ```
 
-Nézd meg a böngészőt. A `Leaderboard` sor zöldre vált: `shared database`.
-Játssz egy kört, és most már frissítés után is megmarad a pontszámod, akármelyik
-pod válaszol.
+A `Leaderboard` sor zöldre vált, és a pontszámod most már mindhárom pod
+számára ugyanaz.
 
 > Ugyanez a lépés a felhő migráció kurzuson Key Vault volt. Ott az Azure adta át
 > a titkot a Web App környezeti változójaként, itt a Kubernetes adja át a
-> pod-nak. Az alkalmazás kódja egyik esetben sem tud róla.
-
-### 4.7 Rolling update
-
-```bash
-docker tag snake:v2 snake:v3
-kind load docker-image snake:v3 --name dedih
-kubectl set image deployment/snake snake=snake:v3
-```
-
-Közben frissítsd a böngészőt, sokszor. Az `Image` sor pod-onként vált át, a
-játék pedig végig működik. Nincs leállás.
+> podnak. Az alkalmazás kódja egyik esetben sem tud róla.
 
 ---
 
-## 5. Blokk: a cluster biztonsági beállításai
+## 5. Blokk: Kubernetes biztonsági beállítások
 
 ### 5.1 Mit tud egy privilegizált pod?
 
@@ -440,7 +548,7 @@ kubectl exec -it attacker -- chroot /host sh
 ```
 
 Most a node fájlrendszerét olvasod, egy konténer belsejéből. Ennek a neve
-angolul *container escape*, és ez a konténerek egyik legfontosabb kockázata:
+angolul *container escape*:
 
 ```sh
 ls /etc
@@ -480,9 +588,9 @@ kubectl rollout status deployment/snake
 ```
 
 Elindul, mert a `k8s/snake.yaml` már tartalmazza mindazt, amit a `restricted`
-elvár. Ha előre rendben van a beállítás, akkor a szabály nem okoz problémát.
+elvár.
 
-> Figyeld meg a figyelmeztetést a `postgres` pod-ról: a hivatalos Postgres image
+> Figyeld meg a figyelmeztetést a `postgres` podról: a hivatalos Postgres image
 > nem felel meg a `restricted` szintnek. A valóságban is így van, a third-party
 > image-ek gyakran nem felelnek meg.
 
@@ -509,8 +617,8 @@ Most kényszerítsünk ki új kapcsolatot:
 kubectl rollout restart deployment/snake
 ```
 
-Néhány másodperc múlva a panel sárgára vált. A `Leaderboard` sor újra
-`this pod only`, alatta pedig ez áll: `Connecting, attempt 2 of 6 failed.`
+Néhány másodperc múlva a panel sárgára vált, alatta ez áll:
+`Connecting, attempt 2 of 6 failed.`
 
 Vedd le a szabályt:
 
@@ -527,6 +635,7 @@ végig újrapróbálkozott.
 
 ```bash
 kind delete cluster --name dedih
+docker compose down
 ```
 
 A Codespace törlése: a forkodon **Code** gomb, **Codespaces** fül, a három pont,
@@ -540,9 +649,12 @@ A Codespace törlése: a forkodon **Code** gomb, **Codespaces** fül, a három p
 `F1`, majd **Codespaces: Rebuild Container**. A `postCreateCommand` csak a
 container létrehozásakor fut le, újraindításkor nem.
 
+**`port is already allocated`.**
+Fut még valami azon a porton. `docker ps`, majd `docker rm -f <név>`, vagy
+`docker compose down`.
+
 **A `kind create cluster` sokáig tart.**
-Az első alkalommal letölti a node image-et, ami körülbelül egy gigabyte. Utána
-gyors.
+Az első alkalommal letölti a node image-et, ami körülbelül egy gigabyte.
 
 **A 8080-as porton nem válaszol semmi, közvetlenül a cluster létrehozása után.**
 Várj tíz másodpercet, és próbáld újra. A kube-proxy szabályainak kell egy kis
@@ -565,25 +677,24 @@ kind delete cluster --name dedih
 kind create cluster --config kind/cluster.yaml
 ```
 
-A Docker image-ek megmaradnak, csak újra be kell tölteni őket a clusterbe.
-
 ---
 
 ## 8. Parancsok összefoglalva
 
 | Parancs | Mit csinál |
 | --- | --- |
+| `docker run -d --name x kep` | konténer indítása a háttérben |
+| `docker ps` | mi fut éppen |
+| `docker exec -it x sh` | belépés egy futó konténerbe |
 | `docker build -t nev .` | image építése a Dockerfile alapján |
 | `docker images` | image-ek és méretük |
-| `docker run -p 3000:3000 nev` | konténer indítása, port publikálásával |
-| `docker exec -it <id> sh` | belépés egy futó konténerbe |
-| `docker history nev` | az image rétegei |
 | `trivy image nev` | sebezhetőségek keresése |
+| `docker compose up --build` | a compose.yaml-ban leírt service-ek indítása |
+| `docker compose down` | leállítás és takarítás |
 | `kind create cluster` | helyi Kubernetes cluster indítása |
 | `kind load docker-image nev` | image átadása a clusternek |
 | `kubectl apply -f fajl.yaml` | erőforrás létrehozása vagy módosítása |
-| `kubectl get pods` | mi fut éppen |
+| `kubectl get pods` | mi fut a clusterben |
 | `kubectl scale deployment/x --replicas=3` | példányszám állítása |
 | `kubectl rollout restart deployment/x` | az összes pod újraindítása |
 | `kubectl create secret generic ...` | secret létrehozása |
-| `kubectl label ns default pod-security...` | Pod Security Standards bekapcsolása |
