@@ -252,7 +252,7 @@ CMD ["node", "server.js"]
 ```
 
 ```bash
-docker build -t snake:v1 .
+docker build -f Dockerfile.hardened -t snake:v1 .
 docker images | head -5
 ```
 
