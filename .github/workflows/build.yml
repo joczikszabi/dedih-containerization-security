@@ -1,0 +1,90 @@
+# Builds one of the two Dockerfiles in this repository and reports what came
+# out: the size, and who the process inside runs as.
+#
+# One build per run, chosen from a dropdown, because that is what a real
+# pipeline does. To compare the two, start it twice. The runs are independent,
+# so GitHub executes them at the same time and you can read the two summaries
+# side by side.
+
+name: Build an image
+
+on:
+  workflow_dispatch:
+    inputs:
+      dockerfile:
+        description: "Melyik Dockerfile-t építsük?"
+        type: choice
+        required: true
+        default: app/Dockerfile
+        options:
+          - app/Dockerfile
+          - app/Dockerfile.hardened
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ inputs.dockerfile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out what we are building
+        id: plan
+        run: |
+          case "${{ inputs.dockerfile }}" in
+            app/Dockerfile.hardened)
+              echo "tag=snake:hardened" >> "$GITHUB_OUTPUT"
+              echo "label=multi stage, node:22-alpine, USER node" >> "$GITHUB_OUTPUT"
+              echo "ignore=yes" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "tag=snake:step0" >> "$GITHUB_OUTPUT"
+              echo "label=egy szakasz, node:22, npm install" >> "$GITHUB_OUTPUT"
+              echo "ignore=no" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Build
+        id: build
+        run: |
+          docker build \
+            -f "${{ inputs.dockerfile }}" \
+            --build-arg IMAGE_TAG="${{ steps.plan.outputs.tag }}" \
+            -t "${{ steps.plan.outputs.tag }}" \
+            app
+
+      # always(), so a failed build still leaves a readable summary behind.
+      - name: Write the summary
+        if: always()
+        run: |
+          tag='${{ steps.plan.outputs.tag }}'
+
+          size=$(docker images --format '{{.Size}}' "$tag" 2>/dev/null | head -1)
+          : "${size:=nem épült meg, lásd a logot}"
+
+          uid=$(docker run --rm "$tag" id -u 2>/dev/null | tr -dc '0-9')
+          if [ -z "$uid" ]; then
+            user="ismeretlen"
+          elif [ "$uid" = "0" ]; then
+            user="root (uid 0)"
+          else
+            user="nem root (uid ${uid})"
+          fi
+
+          {
+            echo "## ${{ inputs.dockerfile }}"
+            echo
+            echo '| | |'
+            echo '| --- | --- |'
+            printf '| Dockerfile | `%s` |\n' '${{ inputs.dockerfile }}'
+            printf '| Jellemzői | %s |\n' '${{ steps.plan.outputs.label }}'
+            printf '| Image mérete | **%s** |\n' "$size"
+            printf '| Milyen userként fut | **%s** |\n' "$user"
+            echo
+            echo 'A másik változat összehasonlításához indítsd el ezt a workflow-t'
+            echo 'még egyszer, a másik Dockerfile-lal, és tedd egymás mellé a két'
+            echo 'összefoglalót.'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -29,7 +29,7 @@ Ide jutunk el a nap végére:
 
 | | Image mérete | CRITICAL + HIGH sebezhetőség | Milyen userként fut |
 | --- | --- | --- | --- |
-| Reggel | 1.78 GB | 419 | root (uid 0) |
+| Reggel | 1.81 GB | 419 | root (uid 0) |
 | Délután | 245 MB | 8 | node (uid 1000) |
 
 A maradék 8 találat az alap image-ből származik, egy sem a saját kódunkból.
@@ -38,7 +38,7 @@ A maradék 8 találat az alap image-ből származik, egy sem a saját kódunkbó
 
 ## Fontos tudnivalók
 
-**Ha elakadsz, a `solutions/` mappában megtalálod a kész megoldást.** Másold be,
+**Ha elakadsz, az `app/Dockerfile.hardened` fájlban ott a kész megoldás.** Másold be,
 és haladj tovább.
 
 **A nap végén töröld a Codespace-t.**
@@ -126,11 +126,15 @@ docker stop db && docker rm db
 ### 1.3 A repo felépítése
 
 ```
-app/               a Snake játék forráskódja és a Dockerfile
+app/               a Snake játék forráskódja és minden Docker fájl
+  Dockerfile            ezt fogod szerkeszteni
+  Dockerfile.hardened   a kész megoldás, ha elakadsz
+  .dockerignore         mi maradjon ki a build kontextusból
 compose.yaml       két konténer együtt, ezt a 3. blokkban használjuk
+scan.sh            kiírja egy image sebezhetőségeinek számát
 kind/              a helyi Kubernetes cluster beállítása
 k8s/               Kubernetes manifest fájlok
-solutions/         kész megoldások, ha elakadsz
+.github/workflows/ böngészőből indítható workflow-k, ha a Codespace nem megy
 docs/LAB.md        ez a dokumentum
 ```
 
@@ -152,7 +156,7 @@ docker build -t snake:step0 .
 docker images snake:step0
 ```
 
-Jegyezd fel a méretet. Körülbelül **1.78 GB** lesz.
+Jegyezd fel a méretet. Körülbelül **1.81 GB** lesz.
 
 Indítsd el:
 
@@ -174,24 +178,36 @@ mégsem találja. Erre a 3. blokkban visszatérünk.
 
 ### 2.2 `.dockerignore`
 
-```bash
-cat > .dockerignore <<'EOF'
+Ezt a fájlt nem kell megírnod, benne van a repóban. Azt mondja meg, mi ne kerüljön
+be a build kontextusba, vagyis abba a csomagba, amit a `docker build` odaad a
+Dockernek.
+
+```
 node_modules
 dist
 .git
 *.md
 .env
-EOF
-docker build -t snake:step1 .
 ```
 
-A méret alig változik, a build viszont sokkal gyorsabb lesz. Eddig a saját
-`node_modules` mappád is felment a build kontextusba, teljesen fölöslegesen.
+Mit számít ez? Ebben a projektben ennyit:
 
-> A `.dockerignore` biztonsági szempontból is számít. A `COPY . .` mindent
-> bemásol, amit a build kontextusban talál: `.env` fájlt, `.git` mappát,
-> kulcsokat. Ami egyszer belekerült egy rétegbe, azt bárki kiolvassa, aki le
-> tudja húzni az image-et. Ezért van a listán a `.env` és a `.git` is.
+| | Átküldött build kontextus |
+| --- | --- |
+| `.dockerignore` nélkül | 103 MB |
+| `.dockerignore`-ral | 216 kB |
+
+A `docker build` kimenetében a `transferring context` sorban látszik.
+
+**Az image mérete és a build ideje itt alig változik tőle.** Ez a projekt kicsi, a
+gép pedig gyors, így a különbség nem érződik. Máshol viszont igen: távoli buildernél
+vagy CI-ban minden megabájt átmegy a hálózaton, és nagyobb projekteknél a
+`node_modules` több száz megabájt is lehet.
+
+A második ok viszont mindig érvényes, mérettől függetlenül. A `COPY . .` mindent
+bemásol, amit a kontextusban talál: `.env` fájlt, `.git` mappát, kulcsokat. Ami
+egyszer bekerült egy rétegbe, azt bárki kiolvassa, aki le tudja húzni az image-et.
+Erre a 3. blokkban visszatérünk.
 
 ### 2.3 Csak production függőségek
 
@@ -240,10 +256,10 @@ docker build -t snake:v1 .
 docker images | head -5
 ```
 
-1.78 GB helyett 245 MB. A `vite`, a `typescript` és az `eslint` mind benne volt
+1.81 GB helyett 245 MB. A `vite`, a `typescript` és az `eslint` mind benne volt
 az első image-ben, pedig egyikre sincs szükség futásidőben.
 
-> Ha elakadtál: `cp ../solutions/Dockerfile.hardened Dockerfile`
+> Ha elakadtál: `cp Dockerfile.hardened Dockerfile`
 
 ### 2.5 Devcontainer
 
@@ -463,7 +479,7 @@ szükség se felhőre, se külön gépre.
 
 ```bash
 cd /workspaces/dedih-containerization-security
-kind create cluster --config kind/cluster.yaml
+kind create cluster --config kind/kind-config.yaml
 kubectl get nodes
 ```
 
@@ -646,6 +662,37 @@ végig újrapróbálkozott.
 
 ---
 
+## Ha a Codespace nem indul: GitHub Actions
+
+A 2. és a 3. blokk feladatai a böngészőből is elindíthatók, terminál nélkül. Nem
+helyettesítik a gyakorlatot, de ha a Codespace nem működik, ezekből ugyanazok a
+számok kijönnek.
+
+**Először engedélyezni kell.** A forkodon az Actions alapból ki van kapcsolva.
+Nyisd meg az **Actions** fület, és kattints a zöld megerősítő gombra. Ezt egyszer
+kell megtenni.
+
+**Indítás.** Az Actions fülön bal oldalt válaszd ki a workflow-t, majd jobb oldalt
+**Run workflow**.
+
+| Workflow | Mit csinál |
+| --- | --- |
+| Build an image | Megépíti a kiválasztott Dockerfile-t, és kiírja a méretét meg azt, milyen userként fut |
+| Scan images for vulnerabilities | Lefuttatja a sebezhetőségi vizsgálatot, és kiírja a találatok számát |
+
+A **Build an image** workflow-nál egy legördülő menüből választhatsz Dockerfile-t.
+A kettő összehasonlításához indítsd el kétszer, egyszer az `app/Dockerfile`-lal,
+egyszer az `app/Dockerfile.hardened`-del. A két futás egymással párhuzamosan megy,
+és utána egymás mellé tehető a két összefoglaló.
+
+**Az eredmény olvasása.** Kattints a befejezett futásra. Az összefoglaló azon az
+oldalon van, nem kell a naplót megnyitni hozzá.
+
+> A 4. és az 5. blokk (Kubernetes) nem futtatható így. Ott a cluster és a böngésző
+> közötti kapcsolat kell, ami csak a Codespace-ben van meg.
+
+---
+
 ## 6. Takarítás
 
 ```bash
@@ -689,7 +736,7 @@ Az image-ből hiányzik a `USER node` sor, vagy nem építetted újra utána.
 
 ```bash
 kind delete cluster --name dedih
-kind create cluster --config kind/cluster.yaml
+kind create cluster --config kind/kind-config.yaml
 ```
 
 ---

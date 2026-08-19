@@ -1,0 +1,113 @@
+# Scans four images with Trivy and reports the CRITICAL and HIGH counts in the
+# run summary: the two base images, and the two images built from this
+# repository's Dockerfiles.
+
+name: Scan images for vulnerabilities
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The version .devcontainer/Dockerfile installs, so the counts here and the
+  # counts in a Codespace come from the same scanner.
+  TRIVY_VERSION: "0.74.0"
+
+jobs:
+  scan:
+    name: Count CRITICAL and HIGH findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          curl -fsSL -o /tmp/trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          sudo install -m 0755 /tmp/trivy /usr/local/bin/trivy
+          trivy --version
+
+      - name: Build the starting point, app/Dockerfile
+        run: |
+          docker build \
+            -f app/Dockerfile \
+            --build-arg IMAGE_TAG=snake:step0 \
+            -t snake:step0 \
+            app
+
+      - name: Build the hardened version, app/Dockerfile.hardened
+        run: |
+          docker build \
+            -f app/Dockerfile.hardened \
+            --build-arg IMAGE_TAG=snake:v2 \
+            -t snake:v2 \
+            app
+
+      - name: Pull the two base images
+        run: |
+          docker pull node:22
+          docker pull node:22-alpine
+
+      # Fetched once up front and retried, because this is the only step that
+      # depends on a registry outside this repository.
+      - name: Download the vulnerability database
+        run: |
+          for attempt in 1 2 3; do
+            if trivy image --download-db-only; then
+              exit 0
+            fi
+            echo "attempt ${attempt} failed, retrying in 15 seconds"
+            sleep 15
+          done
+          exit 1
+
+      # scan.sh is the same script the lab uses. It prints one line per image
+      # and does not fail on findings, however many there are.
+      - name: Scan
+        run: |
+          set -o pipefail
+          ./scan.sh node:22 node:22-alpine snake:step0 snake:v2 | tee /tmp/scan.txt
+
+      # always(), so a failed scan still leaves a readable summary behind.
+      - name: Write the summary
+        if: always()
+        run: |
+          {
+            echo '## CRITICAL and HIGH findings'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ! -s /tmp/scan.txt ]; then
+            echo 'The scan did not finish. Open the log on this page to see why.' \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo '| Image | What it is | CRITICAL + HIGH |'
+            echo '| --- | --- | --- |'
+            while read -r image count _; do
+              case "$image" in
+                node:22)        what='base image of `app/Dockerfile`' ;;
+                node:22-alpine) what='base image of `app/Dockerfile.hardened`' ;;
+                snake:step0)    what='built here from `app/Dockerfile`' ;;
+                snake:v2)       what='built here from `app/Dockerfile.hardened`' ;;
+                *)              what='' ;;
+              esac
+              printf '| `%s` | %s | %s |\n' "$image" "$what" "$count"
+            done < /tmp/scan.txt
+            echo
+            echo 'Both built images inherit nearly all of their findings from their base image, not from the application code. Which base image you build on, and how often you rebuild on a fresh one, is most of the result.'
+            echo
+            echo 'These counts move as the vulnerability database is updated, so they will not match the numbers in `docs/LAB.md` exactly.'
+            echo
+            echo 'To see the findings themselves rather than the count:'
+            echo
+            echo '```bash'
+            echo 'trivy image --severity CRITICAL,HIGH snake:v2'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
