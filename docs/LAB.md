@@ -251,8 +251,9 @@ EXPOSE 3000
 CMD ["node", "server.js"]
 ```
 
+Másold át a fenti multi-stage buildet a Dockerfile-ba, majd építsd újra:
 ```bash
-docker build -f Dockerfile.hardened -t snake:v1 .
+docker build -t snake:v1 .
 docker images | head -5
 ```
 
