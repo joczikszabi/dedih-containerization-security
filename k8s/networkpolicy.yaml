@@ -1,11 +1,9 @@
-# Block 5. Cut the application off from the database without touching either.
+# Selects the postgres pods and permits ingress from nothing.
 #
-# A NetworkPolicy is allow-list based. This one selects the postgres pods and
-# permits ingress from nothing at all, so the application's connections start
-# failing and the status panel turns amber within a few seconds.
-#
-# Delete it and the panel goes green again on its own, because the application
-# keeps retrying. Neither pod was restarted and no code changed.
+# Applying this does not cut off the running application: a NetworkPolicy
+# governs new connections, and the existing pooled one keeps working. The
+# application only loses the database after its pods are restarted and have to
+# connect again.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

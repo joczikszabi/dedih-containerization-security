@@ -1,14 +1,10 @@
-# One node is plenty. The port mapping is what matters here.
+# One node, with host port 8080 mapped to the NodePort on 30080.
 #
-# `kubectl port-forward` picks a single pod and stays on it, so with three
-# replicas you would talk to the same one every time and never see the load
-# balancing. Publishing a NodePort out of the kind node instead sends traffic
-# through kube-proxy, which does spread it, and NodePort is a real Service type
-# rather than a debugging tool.
+# A NodePort rather than `kubectl port-forward`, because port-forward pins one
+# pod and would hide the load balancing across replicas.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-# Without this the cluster is called "kind", and every --name dedih afterwards
-# fails with "no nodes found for cluster".
+# Without this the cluster is called "kind" and every --name dedih fails.
 name: dedih
 nodes:
   - role: control-plane

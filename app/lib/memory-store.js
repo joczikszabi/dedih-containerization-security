@@ -1,15 +1,9 @@
 /**
  * The leaderboard used when there is no database.
  *
- * This exists to be wrong in a specific, visible way. It lives in the memory of
- * one process, so two replicas of the same image hold two different
- * leaderboards. Submit a score, refresh a few times, and it appears and
- * disappears depending on which pod answered.
- *
- * That confusion is the single most important thing in the course. Containers
- * are disposable, anything you keep inside one dies with it, and the fix is to
- * put state somewhere that outlives any individual container. Do not "improve"
- * this into a shared cache: the divergence is the lesson.
+ * Per process, so replicas of the same image hold different lists and a score
+ * appears or disappears depending on which one answered. That divergence is
+ * deliberate teaching material: do not replace this with a shared cache.
  */
 
 import { LEADERBOARD_SIZE } from './config.js'

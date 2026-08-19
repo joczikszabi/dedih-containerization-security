@@ -1,13 +1,10 @@
-# A database in a pod, which is exactly what you should not do in production
-# and exactly the right thing to do in a lab.
+# A database in a pod. Fine for a lab, not how you would run one in production.
 #
-# Note there is no volume. Delete this pod and every score goes with it. That
-# is deliberate: it is the difference between a stateless workload, which the
-# application is, and a stateful one, which this is. Making it survive needs a
-# PersistentVolumeClaim, and that is a conversation, not a line of YAML.
+# There is no volume, so deleting this pod deletes the data with it. Surviving a
+# restart needs a PersistentVolumeClaim, which is out of scope here.
 #
-# The credentials come from a Secret you create by hand, so they are not in
-# this repository. See docs/LAB.md.
+# The credentials come from a Secret created by hand, so they are not in this
+# repository. See docs/LAB.md.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

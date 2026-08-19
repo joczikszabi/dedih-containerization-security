@@ -1,13 +1,5 @@
-# The image this dev container is built from.
-#
-# This is an ordinary Dockerfile, the same kind you write in block 2. The
-# difference is what it is for: instead of packaging an application to ship,
-# it packages a development environment to work in. FROM, RUN and layers behave
-# the same way in both cases.
-#
-# Nothing here is specific to Codespaces. The same definition runs under VS Code
-# with the Dev Containers extension, under the devcontainer CLI, and in
-# JetBrains IDEs. Codespaces is one host for it, not a dependency.
+# The image this dev container is built from. Not Codespaces specific: the same
+# definition runs under VS Code, the devcontainer CLI and JetBrains.
 
 FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm
 

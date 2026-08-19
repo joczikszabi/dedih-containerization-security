@@ -1,10 +1,8 @@
 /**
  * Every tunable value the server has, in one place.
  *
- * The four environment variables below are the whole contract between this
- * application and the platform underneath it. That is the point of the course:
- * the same image runs on your laptop, in Docker, and in Kubernetes, and the
- * only thing that changes is what gets injected here.
+ * The four environment variables are the entire contract with whatever runs
+ * this image: nothing else about the platform reaches the application.
  */
 
 import os from 'node:os'
@@ -22,16 +20,15 @@ export const PORT = Number.parseInt(process.env.PORT ?? '', 10) || 3000
 export const DATABASE_URL = process.env.DATABASE_URL
 
 /**
- * Which pod is answering. Kubernetes injects this through the downward API,
- * see k8s/snake.yaml. Empty when running under plain Docker, which is exactly
- * the difference the status panel is there to show.
+ * Which pod is answering. Kubernetes injects it through the downward API, see
+ * k8s/snake.yaml. Empty under plain Docker.
  */
 export const POD_NAME = process.env.POD_NAME ?? ''
 
 /** Which image built this container. Set as a build arg, see the Dockerfile. */
 export const IMAGE_TAG = process.env.IMAGE_TAG ?? 'unknown'
 
-/** Who the process runs as. The whole of block 3 is about this being non-zero. */
+/** Who the process runs as. uid 0 means root. */
 export function describeUser() {
   const uid = typeof process.getuid === 'function' ? process.getuid() : -1
   let name = 'unknown'
@@ -45,7 +42,6 @@ export function describeUser() {
   return { user: name, uid }
 }
 
-/** Leaderboard */
 export const LEADERBOARD_SIZE = 10
 
 /** Validation limits for POST /api/scores. */
